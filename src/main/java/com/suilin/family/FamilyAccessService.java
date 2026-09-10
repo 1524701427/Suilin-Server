@@ -24,9 +24,7 @@ public class FamilyAccessService {
     private final ElderMapper elderMapper;
     private final UserMapper userMapper;
 
-    public long currentUserId() {
-        return StpUtil.getLoginIdAsLong();
-    }
+    public long currentUserId() { return StpUtil.getLoginIdAsLong(); }
 
     @Transactional
     public Family currentFamily() {
@@ -34,7 +32,7 @@ public class FamilyAccessService {
         FamilyMember member = familyMemberMapper.selectOne(new LambdaQueryWrapper<FamilyMember>()
                 .eq(FamilyMember::getUserId, uid)
                 .eq(FamilyMember::getStatus, "ACTIVE")
-                .orderByAsc(FamilyMember::getCreatedAt)
+                .orderByDesc(FamilyMember::getCreatedAt)
                 .last("limit 1"));
         if (member != null) {
             Family family = familyMapper.selectById(member.getFamilyId());
@@ -43,7 +41,6 @@ public class FamilyAccessService {
 
         User user = userMapper.selectById(uid);
         if (user == null) throw new IllegalArgumentException("用户不存在");
-
         LocalDateTime now = LocalDateTime.now();
         Family family = new Family();
         family.setName((user.getName() == null || user.getName().isBlank() ? "我的" : user.getName().trim()) + "的家庭");
@@ -76,11 +73,8 @@ public class FamilyAccessService {
         long uid = currentUserId();
         Elder elder = elderMapper.selectById(elderId);
         if (elder == null) throw new IllegalArgumentException("长辈不存在");
-        if (elder.getFamilyId() != null) {
-            requireMember(elder.getFamilyId(), uid);
-        } else if (!Long.valueOf(uid).equals(elder.getCreatorUserId())) {
-            throw new IllegalArgumentException("无权访问该长辈");
-        }
+        if (elder.getFamilyId() != null) requireMember(elder.getFamilyId(), uid);
+        else if (!Long.valueOf(uid).equals(elder.getCreatorUserId())) throw new IllegalArgumentException("无权访问该长辈");
         return elder;
     }
 
