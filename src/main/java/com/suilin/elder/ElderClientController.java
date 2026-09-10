@@ -55,7 +55,7 @@ public class ElderClientController {
         data.put("name", elder.getName());
         data.put("relation", elder.getRelation());
         data.put("birthday", elder.getBirthday());
-        data.put("age", Period.between(elder.getBirthday(), LocalDate.now()).getYears());
+        data.put("age", elder.getBirthday() == null ? null : Math.max(0, Period.between(elder.getBirthday(), LocalDate.now()).getYears()));
         Map<String, Object> contact = new LinkedHashMap<>();
         if (creator != null) {
             contact.put("name", creator.getName());
@@ -79,9 +79,7 @@ public class ElderClientController {
     public ApiResponse<?> complete(@PathVariable Long reminderId, @Valid @RequestBody ClientRequest req) {
         Elder elder = boundElder(req.clientToken());
         Reminder reminder = reminderMapper.selectById(reminderId);
-        if (reminder == null || !elder.getId().equals(reminder.getElderId())) {
-            throw new IllegalArgumentException("提醒不存在");
-        }
+        if (reminder == null || !elder.getId().equals(reminder.getElderId())) throw new IllegalArgumentException("提醒不存在");
         LocalDateTime now = LocalDateTime.now();
         ReminderRecord record = new ReminderRecord();
         record.setReminderId(reminderId);
