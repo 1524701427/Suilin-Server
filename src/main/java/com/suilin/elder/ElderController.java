@@ -90,14 +90,19 @@ public class ElderController {
     }
 
     @GetMapping("/api/elders")
+    @Transactional
     public ApiResponse<?> list() {
         long userId = familyAccessService.currentUserId();
         Family family = familyAccessService.currentFamily();
+        List<Elder> legacy = elderMapper.selectList(new LambdaQueryWrapper<Elder>()
+                .isNull(Elder::getFamilyId).eq(Elder::getCreatorUserId, userId));
+        for (Elder e : legacy) {
+            e.setFamilyId(family.getId());
+            e.setUpdatedAt(LocalDateTime.now());
+            elderMapper.updateById(e);
+        }
         List<Elder> elders = new ArrayList<>(elderMapper.selectList(new LambdaQueryWrapper<Elder>()
                 .eq(Elder::getFamilyId, family.getId()).orderByDesc(Elder::getCreatedAt)));
-        List<Elder> legacy = elderMapper.selectList(new LambdaQueryWrapper<Elder>()
-                .isNull(Elder::getFamilyId).eq(Elder::getCreatorUserId, userId).orderByDesc(Elder::getCreatedAt));
-        for (Elder e : legacy) if (elders.stream().noneMatch(x -> x.getId().equals(e.getId()))) elders.add(e);
         return ApiResponse.ok(elders.stream().map(this::view).toList());
     }
 
