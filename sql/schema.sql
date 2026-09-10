@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS elders (
   creator_user_id BIGINT NOT NULL,
   name VARCHAR(50) NOT NULL,
   relation VARCHAR(30) NOT NULL,
-  birthday DATE NOT NULL,
+  birthday DATE NULL,
   phone VARCHAR(20) NULL,
   health_tags_json JSON NULL,
   bind_status VARCHAR(20) NOT NULL DEFAULT 'WAITING',
