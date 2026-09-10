@@ -16,5 +16,7 @@ public class SosEvent {
     private BigDecimal longitude;
     private String status;
     private LocalDateTime createdAt;
+    private Long handledByUserId;
     private LocalDateTime handledAt;
+    private LocalDateTime closedAt;
 }
