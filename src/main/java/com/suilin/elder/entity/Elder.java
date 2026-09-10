@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 @TableName("elders")
 public class Elder {
     private Long id;
+    private Long familyId;
     private Long creatorUserId;
     private String name;
     private String relation;
