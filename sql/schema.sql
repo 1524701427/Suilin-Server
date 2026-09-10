@@ -186,6 +186,17 @@ CREATE TABLE IF NOT EXISTS notification_settings (
   CONSTRAINT fk_notification_settings_user FOREIGN KEY (user_id) REFERENCES users(id)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS privacy_settings (
+  id BIGINT PRIMARY KEY,
+  user_id BIGINT NOT NULL UNIQUE,
+  health_visible TINYINT(1) NOT NULL DEFAULT 1,
+  location_visible TINYINT(1) NOT NULL DEFAULT 0,
+  device_visible TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  CONSTRAINT fk_privacy_settings_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS feedbacks (
   id BIGINT PRIMARY KEY,
   user_id BIGINT NOT NULL,
