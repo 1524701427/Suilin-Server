@@ -41,6 +41,12 @@ public class CareTaskController {
                 .stream().map(this::view).toList());
     }
 
+    @GetMapping("/{id}")
+    public ApiResponse<?> detail(@PathVariable Long id) {
+        Family family = familyAccessService.currentFamily();
+        return ApiResponse.ok(view(requireTask(id, family.getId())));
+    }
+
     @PostMapping
     public ApiResponse<?> create(@Valid @RequestBody Request req) {
         Family family = familyAccessService.currentFamily();
