@@ -5,6 +5,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import redis
 from fastapi import Header
@@ -20,6 +21,7 @@ MYSQL_USER = os.getenv("MYSQL_USER", "suilin")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "suilin123")
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-only-change-me")
 JWT_EXPIRE_DAYS = int(os.getenv("JWT_EXPIRE_DAYS", "30"))
+APP_TIMEZONE = ZoneInfo(os.getenv("APP_TIMEZONE", "Asia/Shanghai"))
 
 DATABASE_URL = (
     f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/"
@@ -60,8 +62,16 @@ def new_id() -> int:
 
 
 def now() -> datetime:
-    """Return the current local application time."""
-    return datetime.now()
+    """Return the current application time as a naive local datetime.
+
+    Database columns use MySQL ``DATETIME`` without timezone information, so
+    application timestamps are normalized to the configured business timezone
+    before the timezone marker is removed.
+
+    Returns:
+        Current time in the configured application timezone.
+    """
+    return datetime.now(APP_TIMEZONE).replace(tzinfo=None)
 
 
 def get_db():
