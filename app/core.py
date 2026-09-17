@@ -1,3 +1,5 @@
+"""Shared infrastructure, authentication helpers, and database access utilities."""
+
 import os
 import re
 import uuid
@@ -5,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import redis
-from fastapi import Depends, Header, HTTPException
+from fastapi import Header
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy import create_engine, text
@@ -38,7 +40,9 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class BusinessError(Exception):
+    """Represent a user-facing business error returned by the API."""
     def __init__(self, message: str, code: int = 400, status_code: int = 200):
+        """Initialize a business-layer exception."""
         self.message = message
         self.code = code
         self.status_code = status_code
@@ -46,6 +50,7 @@ class BusinessError(Exception):
 
 
 def ok(data: Any = None):
+    """Build the standard successful API response."""
     return {"code": 0, "message": "ok", "data": data}
 
 
@@ -58,6 +63,7 @@ def now() -> datetime:
 
 
 def get_db():
+    """Yield a database session and always close it afterward."""
     db = SessionLocal()
     try:
         yield db
@@ -66,14 +72,17 @@ def get_db():
 
 
 def one(db: Session, sql: str, params: dict | None = None):
+    """Execute a SQL statement and return its first mapping row."""
     return db.execute(text(sql), params or {}).mappings().first()
 
 
 def all_rows(db: Session, sql: str, params: dict | None = None):
+    """Execute a SQL statement and return all mapping rows."""
     return list(db.execute(text(sql), params or {}).mappings().all())
 
 
 def execute(db: Session, sql: str, params: dict | None = None):
+    """Execute a SQL statement with optional bound parameters."""
     return db.execute(text(sql), params or {})
 
 
@@ -83,6 +92,7 @@ def snake_to_camel(name: str) -> str:
 
 
 def view_row(row):
+    """Convert a database mapping row into an API-friendly dictionary."""
     if row is None:
         return None
     return {snake_to_camel(k): v for k, v in dict(row).items()}
@@ -101,6 +111,7 @@ def create_token(user_id: int) -> str:
 
 
 def decode_token(token: str):
+    """Decode and validate a JWT, including the Redis logout blacklist."""
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         jti = payload.get("jti")
@@ -128,6 +139,7 @@ def current_user_id(authorization: str | None = Header(default=None)) -> int:
 
 
 def logout_token(authorization: str | None):
+    """Invalidate the current JWT until its original expiration time."""
     if not authorization or not authorization.startswith("Bearer "):
         return
     token = authorization[7:].strip()
@@ -146,6 +158,7 @@ def logout_token(authorization: str | None):
 
 
 def current_family(db: Session, uid: int):
+    """Return the user's active family, creating a default family when needed."""
     member = one(db, """
         SELECT * FROM family_members
         WHERE user_id=:uid AND status='ACTIVE'
@@ -175,6 +188,7 @@ def current_family(db: Session, uid: int):
 
 
 def require_member(db: Session, family_id: int, uid: int):
+    """Require an active family membership and return the member row."""
     member = one(db, """
         SELECT * FROM family_members
         WHERE family_id=:fid AND user_id=:uid AND status='ACTIVE'
@@ -186,6 +200,7 @@ def require_member(db: Session, family_id: int, uid: int):
 
 
 def require_elder(db: Session, elder_id: int, uid: int):
+    """Require access to an elder and return the elder row."""
     elder = one(db, "SELECT * FROM elders WHERE id=:id", {"id": elder_id})
     if not elder:
         raise BusinessError("长辈不存在")
@@ -201,6 +216,7 @@ def can_manage(member) -> bool:
 
 
 def valid_phone(phone: str):
+    """Validate a mainland China mobile phone number."""
     if not re.fullmatch(r"1\d{10}", phone or ""):
         raise BusinessError("手机号格式不正确")
 
