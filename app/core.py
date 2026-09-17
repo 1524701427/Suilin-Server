@@ -102,7 +102,14 @@ def view_row(row):
 
 
 def create_token(user_id: int) -> str:
-    """Create a signed JWT access token for a family user."""
+    """Create a signed JWT access token for a family user.
+
+    Args:
+        user_id: Unique identifier of the authenticated family user.
+
+    Returns:
+        A signed HS256 JWT string containing identity and expiry claims.
+    """
     issued = datetime.now(timezone.utc)
     expire = issued + timedelta(days=JWT_EXPIRE_DAYS)
     payload = {
@@ -115,7 +122,17 @@ def create_token(user_id: int) -> str:
 
 
 def decode_token(token: str):
-    """Decode and validate a JWT, including the Redis logout blacklist."""
+    """Decode and validate a JWT, including the Redis logout blacklist.
+
+    Args:
+        token: Encoded JWT received from the Authorization header.
+
+    Returns:
+        The validated JWT payload.
+
+    Raises:
+        BusinessError: If the token is invalid, expired, or logged out.
+    """
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         jti = payload.get("jti")
@@ -133,7 +150,17 @@ def decode_token(token: str):
 
 
 def current_user_id(authorization: str | None = Header(default=None)) -> int:
-    """Resolve the authenticated user ID from the Bearer token header."""
+    """Resolve the authenticated user ID from the Bearer token header.
+
+    Args:
+        authorization: HTTP Authorization header in Bearer-token format.
+
+    Returns:
+        The authenticated user numeric identifier.
+
+    Raises:
+        BusinessError: If the header or token is missing or invalid.
+    """
     if not authorization or not authorization.startswith("Bearer "):
         raise BusinessError("请先登录", 401, 401)
     payload = decode_token(authorization[7:].strip())
@@ -193,7 +220,19 @@ def current_family(db: Session, uid: int):
 
 
 def require_member(db: Session, family_id: int, uid: int):
-    """Require an active family membership and return the member row."""
+    """Require an active family membership and return the member row.
+
+    Args:
+        db: Active SQLAlchemy database session.
+        family_id: Family identifier to authorize against.
+        uid: User identifier to check.
+
+    Returns:
+        The active family-member database row.
+
+    Raises:
+        BusinessError: If the user is not an active family member.
+    """
     member = one(db, """
         SELECT * FROM family_members
         WHERE family_id=:fid AND user_id=:uid AND status='ACTIVE'
@@ -205,7 +244,19 @@ def require_member(db: Session, family_id: int, uid: int):
 
 
 def require_elder(db: Session, elder_id: int, uid: int):
-    """Require access to an elder and return the elder row."""
+    """Require access to an elder and return the elder row.
+
+    Args:
+        db: Active SQLAlchemy database session.
+        elder_id: Elder profile identifier.
+        uid: Authenticated user identifier.
+
+    Returns:
+        The authorized elder database row.
+
+    Raises:
+        BusinessError: If the elder is missing or access is denied.
+    """
     elder = one(db, "SELECT * FROM elders WHERE id=:id", {"id": elder_id})
     if not elder:
         raise BusinessError("长辈不存在")
@@ -228,7 +279,15 @@ def valid_phone(phone: str):
 
 
 def verify_password(plain: str, password_hash: str) -> bool:
-    """Verify a plaintext password against a bcrypt hash."""
+    """Verify a plaintext password against a bcrypt hash.
+
+    Args:
+        plain: Plaintext password supplied by the user.
+        password_hash: Stored bcrypt password hash.
+
+    Returns:
+        True when the password matches; otherwise False.
+    """
     try:
         return pwd_context.verify(plain, password_hash)
     except Exception:
