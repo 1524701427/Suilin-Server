@@ -55,10 +55,12 @@ def ok(data: Any = None):
 
 
 def new_id() -> int:
+    """Generate a positive 63-bit identifier compatible with MySQL BIGINT."""
     return uuid.uuid4().int & ((1 << 63) - 1)
 
 
 def now() -> datetime:
+    """Return the current local application time."""
     return datetime.now()
 
 
@@ -87,6 +89,7 @@ def execute(db: Session, sql: str, params: dict | None = None):
 
 
 def snake_to_camel(name: str) -> str:
+    """Convert a snake_case field name to lower camelCase."""
     parts = name.split("_")
     return parts[0] + "".join(p[:1].upper() + p[1:] for p in parts[1:])
 
@@ -99,6 +102,7 @@ def view_row(row):
 
 
 def create_token(user_id: int) -> str:
+    """Create a signed JWT access token for a family user."""
     issued = datetime.now(timezone.utc)
     expire = issued + timedelta(days=JWT_EXPIRE_DAYS)
     payload = {
@@ -129,6 +133,7 @@ def decode_token(token: str):
 
 
 def current_user_id(authorization: str | None = Header(default=None)) -> int:
+    """Resolve the authenticated user ID from the Bearer token header."""
     if not authorization or not authorization.startswith("Bearer "):
         raise BusinessError("请先登录", 401, 401)
     payload = decode_token(authorization[7:].strip())
@@ -212,6 +217,7 @@ def require_elder(db: Session, elder_id: int, uid: int):
 
 
 def can_manage(member) -> bool:
+    """Return whether a family member may perform management operations."""
     return bool(member and member["member_role"] in ("OWNER", "CAREGIVER"))
 
 
@@ -222,6 +228,7 @@ def valid_phone(phone: str):
 
 
 def verify_password(plain: str, password_hash: str) -> bool:
+    """Verify a plaintext password against a bcrypt hash."""
     try:
         return pwd_context.verify(plain, password_hash)
     except Exception:
