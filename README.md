@@ -12,7 +12,7 @@
 - JWT Bearer Token
 - Uvicorn
 
-前端接口协议、MySQL 表结构和主要业务 URL 与原 Java 版本保持兼容，前端无需因为后端语言迁移而重写 API 层。
+前端接口协议、MySQL 表结构和主要业务 URL 保持稳定，前端无需因为后端实现变化而重写 API 层。
 
 ## 已完成的核心业务
 
@@ -104,7 +104,7 @@ docker compose up --build
 Authorization: Bearer <token>
 ```
 
-数据库继续复用 `sql/schema.sql` 中现有表，因此已有 MySQL 数据可以继续使用。密码仍使用 bcrypt，可兼容原 Spring Security BCryptPasswordEncoder 生成的密码哈希。
+数据库使用 `sql/schema.sql` 中的现有表结构，已有 MySQL 数据可以继续使用。密码统一使用 bcrypt。
 
 前端仓库：https://github.com/1524701427/Suilin-Frontend
 
