@@ -10,12 +10,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-          cache-dependency-path: pom.xml
-      - name: Compile backend
-        run: mvn -B -DskipTests package
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile Python sources
+        run: python -m compileall -q app
+      - name: Import FastAPI app
+        env:
+          JWT_SECRET: ci-test-secret
+        run: python -c "from app.main import app; assert app.title == '岁邻 API'"
