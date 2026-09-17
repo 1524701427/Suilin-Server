@@ -27,3 +27,7 @@ jobs:
         env:
           JWT_SECRET: ci-test-secret
         run: python -c "from app.main import app; assert app.title == '岁邻 API'"
+      - name: Run route contract tests
+        env:
+          JWT_SECRET: ci-test-secret
+        run: pytest -q
