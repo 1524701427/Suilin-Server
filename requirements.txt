@@ -10,3 +10,4 @@ pydantic-settings==2.10.1
 python-multipart==0.0.20
 pydocstyle==6.3.0
 ruff==0.13.2
+pytest==8.4.2
