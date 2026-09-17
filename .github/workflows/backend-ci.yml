@@ -19,6 +19,8 @@ jobs:
         run: pip install -r requirements.txt
       - name: Compile Python sources
         run: python -m compileall -q app
+      - name: Ruff static analysis
+        run: ruff check app --select E4,E7,E9,F
       - name: Check Google-style docstrings
         run: pydocstyle --convention=google app
       - name: Import FastAPI app
