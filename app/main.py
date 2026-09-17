@@ -1,10 +1,12 @@
+"""FastAPI application exposing the Suilin family-care REST API."""
+
 import json
 import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import FastAPI, Depends, Header, Request
+from fastapi import Depends, FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -16,16 +18,18 @@ from .core import (
     require_member, valid_phone, verify_password, view_row
 )
 
-app = FastAPI(title="岁邻 API", version="2.0.0", docs_url="/swagger-ui.html", openapi_url="/v3/api-docs")
+# Application and exception handling\napp = FastAPI(title="岁邻 API", version="2.0.0", docs_url="/swagger-ui.html", openapi_url="/v3/api-docs")
 
 
 @app.exception_handler(BusinessError)
 async def business_error_handler(_: Request, exc: BusinessError):
+    """Convert a business exception into the legacy API response format."""
     return JSONResponse(status_code=exc.status_code, content={"code": exc.code, "message": exc.message, "data": None})
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(_: Request, exc: RequestValidationError):
+    """Convert request validation failures into a client-friendly response."""
     detail = exc.errors()[0] if exc.errors() else {}
     message = detail.get("msg", "参数错误")
     return JSONResponse(status_code=200, content={"code": 400, "message": message, "data": None})
@@ -33,27 +37,32 @@ async def validation_error_handler(_: Request, exc: RequestValidationError):
 
 @app.exception_handler(Exception)
 async def generic_error_handler(_: Request, exc: Exception):
+    """Hide unexpected exception details behind a generic server error."""
     return JSONResponse(status_code=500, content={"code": 500, "message": "服务器内部错误", "data": None})
 
 
 @app.get("/health")
 def health():
+    """Return a lightweight process health response."""
     return {"status": "ok"}
 
 
-class RegisterRequest(BaseModel):
+# Authentication and current-user APIs\nclass RegisterRequest(BaseModel):
+    """Validate the payload for register operations."""
     phone: str
     name: str = Field(min_length=1, max_length=50)
     password: str = Field(min_length=6, max_length=64)
 
 
 class LoginRequest(BaseModel):
+    """Validate the payload for login operations."""
     phone: str
     password: str
 
 
 @app.post("/api/auth/register")
 def register(req: RegisterRequest, db: Session = Depends(get_db)):
+    """Register a family user and return an access token."""
     valid_phone(req.phone)
     if one(db, "SELECT id FROM users WHERE phone=:phone", {"phone": req.phone}):
         raise BusinessError("手机号已注册")
@@ -71,6 +80,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
 
 @app.post("/api/auth/login")
 def login(req: LoginRequest, db: Session = Depends(get_db)):
+    """Authenticate a family user and return an access token."""
     valid_phone(req.phone)
     user = one(db, "SELECT * FROM users WHERE phone=:phone", {"phone": req.phone})
     if not user or not verify_password(req.password, user["password_hash"]):
@@ -82,16 +92,19 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
 
 @app.post("/api/auth/logout")
 def logout(authorization: str | None = Header(default=None)):
+    """Invalidate the current access token when possible."""
     logout_token(authorization)
     return ok()
 
 
 class MeUpdate(BaseModel):
+    """Validate the payload for me update operations."""
     name: str = Field(min_length=1, max_length=50)
 
 
 @app.get("/api/me")
 def me(uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Return the authenticated family user's profile."""
     user = one(db, "SELECT * FROM users WHERE id=:id", {"id": uid})
     if not user:
         raise BusinessError("用户不存在")
@@ -100,22 +113,26 @@ def me(uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
 
 @app.put("/api/me")
 def update_me(req: MeUpdate, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Update the authenticated family user's display name."""
     execute(db, "UPDATE users SET name=:name,updated_at=:ts WHERE id=:id", {"name": req.name.strip(), "ts": now(), "id": uid})
     db.commit()
     return me(uid, db)
 
 
 def family_view(db: Session, family):
+    """Serialize a family database row for API output."""
     return {"id": family["id"], "name": family["name"], "ownerUserId": family["owner_user_id"]}
 
 
 @app.get("/api/families/current")
 def get_current_family(uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Return the authenticated user's active family."""
     return ok(family_view(db, current_family(db, uid)))
 
 
 @app.get("/api/families/current/members")
 def get_family_members(uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """List active members of the current family."""
     family = current_family(db, uid)
     rows = all_rows(db, """
         SELECT fm.id,fm.family_id,fm.user_id,fm.member_role,fm.status,fm.created_at,
@@ -131,13 +148,15 @@ def get_family_members(uid: int = Depends(current_user_id), db: Session = Depend
     } for r in rows])
 
 
-class FamilyInviteRequest(BaseModel):
+# Family membership and invitations\nclass FamilyInviteRequest(BaseModel):
+    """Validate the payload for family invite operations."""
     phone: str
     memberRole: str = "MEMBER"
 
 
 @app.post("/api/families/current/invites")
 def create_family_invite(req: FamilyInviteRequest, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Create a time-limited invitation for a family member."""
     valid_phone(req.phone)
     family = current_family(db, uid)
     member = require_member(db, family["id"], uid)
@@ -156,6 +175,7 @@ def create_family_invite(req: FamilyInviteRequest, uid: int = Depends(current_us
 
 @app.get("/api/family-invites/{token}")
 def family_invite_preview(token: str, db: Session = Depends(get_db)):
+    """Return public preview information for a family invitation."""
     inv = one(db, """
         SELECT fi.*, f.name family_name, u.name inviter_name
         FROM family_invites fi
@@ -174,6 +194,7 @@ def family_invite_preview(token: str, db: Session = Depends(get_db)):
 
 @app.post("/api/family-invites/{token}/accept")
 def accept_family_invite(token: str, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Accept a family invitation for the authenticated user."""
     inv = one(db, "SELECT * FROM family_invites WHERE invite_token=:token", {"token": token})
     if not inv:
         raise BusinessError("邀请不存在")
@@ -200,6 +221,7 @@ def accept_family_invite(token: str, uid: int = Depends(current_user_id), db: Se
 
 @app.delete("/api/families/current/members/{member_id}")
 def remove_family_member(member_id: int, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Remove a non-owner member from the current family."""
     family = current_family(db, uid)
     me_member = require_member(db, family["id"], uid)
     if not can_manage(me_member):
@@ -214,15 +236,17 @@ def remove_family_member(member_id: int, uid: int = Depends(current_user_id), db
     return ok()
 
 
-class ElderRequest(BaseModel):
+# Elder profiles and elder-client binding\nclass ElderRequest(BaseModel):
+    """Validate the payload for elder operations."""
     name: str
     relation: str
     birthday: Optional[date] = None
     phone: Optional[str] = None
-    healthTags: list[str] = []
+    healthTags: list[str] = Field(default_factory=list)
 
 
 def elder_view(row):
+    """Serialize an elder row while hiding private client credentials."""
     data = view_row(row)
     raw = row["health_tags_json"] if row and "health_tags_json" in row else None
     if raw:
@@ -245,6 +269,7 @@ def elder_view(row):
 
 @app.post("/api/elders")
 def create_elder(req: ElderRequest, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Create an elder profile in the current family."""
     family = current_family(db, uid)
     eid, ts = new_id(), now()
     execute(db, """
@@ -259,6 +284,7 @@ def create_elder(req: ElderRequest, uid: int = Depends(current_user_id), db: Ses
 
 @app.get("/api/elders")
 def list_elders(uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """List elders belonging to the current family."""
     family = current_family(db, uid)
     rows = all_rows(db, "SELECT * FROM elders WHERE family_id=:fid ORDER BY created_at DESC", {"fid": family["id"]})
     return ok([elder_view(r) for r in rows])
@@ -266,6 +292,7 @@ def list_elders(uid: int = Depends(current_user_id), db: Session = Depends(get_d
 
 @app.put("/api/elders/{elder_id}")
 def update_elder(elder_id: int, req: ElderRequest, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Update an elder profile accessible to the current user."""
     require_elder(db, elder_id, uid)
     execute(db, """
         UPDATE elders SET name=:name,relation=:relation,birthday=:birthday,phone=:phone,
@@ -278,6 +305,7 @@ def update_elder(elder_id: int, req: ElderRequest, uid: int = Depends(current_us
 
 @app.post("/api/elders/{elder_id}/invite")
 def create_elder_invite(elder_id: int, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Create a time-limited elder-client binding invitation."""
     require_elder(db, elder_id, uid)
     token, iid, ts = uuid.uuid4().hex, new_id(), now()
     execute(db, """
@@ -290,6 +318,7 @@ def create_elder_invite(elder_id: int, uid: int = Depends(current_user_id), db: 
 
 @app.post("/api/elders/{elder_id}/unbind")
 def unbind_elder(elder_id: int, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Remove an elder-client binding and invalidate its client token."""
     require_elder(db, elder_id, uid)
     execute(db, """
         UPDATE elders SET bind_status='WAITING',bound_client_id=NULL,bound_client_token=NULL,bound_at=NULL,updated_at=:ts
@@ -301,6 +330,7 @@ def unbind_elder(elder_id: int, uid: int = Depends(current_user_id), db: Session
 
 @app.get("/api/elder-invites/{token}")
 def elder_invite_preview(token: str, db: Session = Depends(get_db)):
+    """Return public preview information for an elder binding invitation."""
     inv = one(db, """
         SELECT ei.*, e.name elder_name,e.relation,e.bind_status,u.name inviter_name
         FROM elder_invites ei JOIN elders e ON e.id=ei.elder_id JOIN users u ON u.id=ei.inviter_user_id
@@ -314,11 +344,13 @@ def elder_invite_preview(token: str, db: Session = Depends(get_db)):
 
 
 class BindRequest(BaseModel):
+    """Validate the payload for bind operations."""
     clientId: str
 
 
 @app.post("/api/elder-invites/{token}/accept")
 def accept_elder_invite(token: str, req: BindRequest, db: Session = Depends(get_db)):
+    """Bind an elder client and issue its independent client token."""
     inv = one(db, "SELECT * FROM elder_invites WHERE invite_token=:token", {"token": token})
     if not inv:
         raise BusinessError("邀请不存在")
@@ -335,6 +367,7 @@ def accept_elder_invite(token: str, req: BindRequest, db: Session = Depends(get_
 
 
 def require_elder_client(db: Session, client_token: str):
+    """Resolve an elder from a valid bound client token."""
     elder = one(db, "SELECT * FROM elders WHERE bound_client_token=:token AND bind_status='BOUND'", {"token": client_token})
     if not elder:
         raise BusinessError("长辈端绑定无效", 401, 401)
@@ -343,14 +376,17 @@ def require_elder_client(db: Session, client_token: str):
 
 @app.get("/api/elder-client/profile")
 def elder_client_profile(clientToken: str, db: Session = Depends(get_db)):
+    """Return the elder profile available to the bound elder client."""
     return ok(elder_view(require_elder_client(db, clientToken)))
 
 
 class ClientRequest(BaseModel):
+    """Validate the payload for client operations."""
     clientToken: str
 
 
 class SosRequest(BaseModel):
+    """Validate the payload for sos operations."""
     clientToken: str
     latitude: Optional[Decimal] = None
     longitude: Optional[Decimal] = None
@@ -358,6 +394,7 @@ class SosRequest(BaseModel):
 
 @app.get("/api/elder-client/reminders")
 def elder_client_reminders(clientToken: str, db: Session = Depends(get_db)):
+    """List enabled reminders for the bound elder client."""
     elder = require_elder_client(db, clientToken)
     rows = all_rows(db, "SELECT * FROM reminders WHERE elder_id=:eid AND enabled=1 ORDER BY schedule_time", {"eid": elder["id"]})
     return ok([view_row(r) for r in rows])
@@ -365,6 +402,7 @@ def elder_client_reminders(clientToken: str, db: Session = Depends(get_db)):
 
 @app.post("/api/elder-client/reminders/{reminder_id}/complete")
 def complete_elder_reminder(reminder_id: int, req: ClientRequest, db: Session = Depends(get_db)):
+    """Record completion of a reminder by the elder client."""
     elder = require_elder_client(db, req.clientToken)
     reminder = one(db, "SELECT * FROM reminders WHERE id=:id AND elder_id=:eid", {"id": reminder_id, "eid": elder["id"]})
     if not reminder:
@@ -380,6 +418,7 @@ def complete_elder_reminder(reminder_id: int, req: ClientRequest, db: Session = 
 
 @app.post("/api/elder-client/sos")
 def elder_client_sos(req: SosRequest, db: Session = Depends(get_db)):
+    """Create an SOS event from the bound elder client."""
     elder = require_elder_client(db, req.clientToken)
     sid, ts = new_id(), now()
     execute(db, """
@@ -390,7 +429,8 @@ def elder_client_sos(req: SosRequest, db: Session = Depends(get_db)):
     return ok(view_row(one(db, "SELECT * FROM sos_events WHERE id=:id", {"id": sid})))
 
 
-class ReminderRequest(BaseModel):
+# Reminder APIs\nclass ReminderRequest(BaseModel):
+    """Validate the payload for reminder operations."""
     title: str
     type: str
     scheduleTime: str
@@ -402,12 +442,14 @@ class ReminderRequest(BaseModel):
 
 @app.get("/api/elders/{elder_id}/reminders")
 def list_reminders(elder_id: int, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """List reminders for an elder accessible to the current family user."""
     require_elder(db, elder_id, uid)
     return ok([view_row(r) for r in all_rows(db, "SELECT * FROM reminders WHERE elder_id=:eid ORDER BY created_at DESC", {"eid": elder_id})])
 
 
 @app.post("/api/elders/{elder_id}/reminders")
 def create_reminder(elder_id: int, req: ReminderRequest, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Create a reminder for an elder."""
     require_elder(db, elder_id, uid)
     rid, ts = new_id(), now()
     execute(db, """
@@ -422,6 +464,7 @@ def create_reminder(elder_id: int, req: ReminderRequest, uid: int = Depends(curr
 
 @app.put("/api/elders/{elder_id}/reminders/{reminder_id}")
 def update_reminder(elder_id: int, reminder_id: int, req: ReminderRequest, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Update an existing elder reminder."""
     require_elder(db, elder_id, uid)
     if not one(db, "SELECT id FROM reminders WHERE id=:id AND elder_id=:eid", {"id": reminder_id, "eid": elder_id}):
         raise BusinessError("提醒不存在")
@@ -436,13 +479,15 @@ def update_reminder(elder_id: int, reminder_id: int, req: ReminderRequest, uid: 
 
 @app.delete("/api/elders/{elder_id}/reminders/{reminder_id}")
 def delete_reminder(elder_id: int, reminder_id: int, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Delete an elder reminder."""
     require_elder(db, elder_id, uid)
     execute(db, "DELETE FROM reminders WHERE id=:id AND elder_id=:eid", {"id": reminder_id, "eid": elder_id})
     db.commit()
     return ok()
 
 
-class HealthRequest(BaseModel):
+# Health record APIs\nclass HealthRequest(BaseModel):
+    """Validate the payload for health operations."""
     metricType: str
     valueText: str
     unit: Optional[str] = None
@@ -453,12 +498,14 @@ class HealthRequest(BaseModel):
 
 @app.get("/api/elders/{elder_id}/health-records")
 def list_health(elder_id: int, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """List health records for an elder."""
     require_elder(db, elder_id, uid)
     return ok([view_row(r) for r in all_rows(db, "SELECT * FROM health_records WHERE elder_id=:eid ORDER BY measured_at DESC", {"eid": elder_id})])
 
 
 @app.post("/api/elders/{elder_id}/health-records")
 def create_health(elder_id: int, req: HealthRequest, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Create a health record for an elder."""
     require_elder(db, elder_id, uid)
     source = req.sourceType if req.sourceType in ("FAMILY_MANUAL","ELDER_MANUAL","DEVICE","HOSPITAL") else "FAMILY_MANUAL"
     hid, ts = new_id(), now()
@@ -473,6 +520,7 @@ def create_health(elder_id: int, req: HealthRequest, uid: int = Depends(current_
 
 @app.put("/api/elders/{elder_id}/health-records/{record_id}")
 def update_health(elder_id: int, record_id: int, req: HealthRequest, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Update an existing health record."""
     require_elder(db, elder_id, uid)
     source = req.sourceType if req.sourceType in ("FAMILY_MANUAL","ELDER_MANUAL","DEVICE","HOSPITAL") else "FAMILY_MANUAL"
     execute(db, """
@@ -489,25 +537,29 @@ def update_health(elder_id: int, record_id: int, req: HealthRequest, uid: int = 
 
 @app.delete("/api/elders/{elder_id}/health-records/{record_id}")
 def delete_health(elder_id: int, record_id: int, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Delete an elder health record."""
     require_elder(db, elder_id, uid)
     execute(db, "DELETE FROM health_records WHERE id=:id AND elder_id=:eid", {"id": record_id, "eid": elder_id})
     db.commit()
     return ok()
 
 
-class DeviceRequest(BaseModel):
+# Device binding APIs\nclass DeviceRequest(BaseModel):
+    """Validate the payload for device operations."""
     deviceType: str
     deviceSn: str
 
 
 @app.get("/api/elders/{elder_id}/devices")
 def list_devices(elder_id: int, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """List devices bound to an elder."""
     require_elder(db, elder_id, uid)
     return ok([view_row(r) for r in all_rows(db, "SELECT * FROM devices WHERE elder_id=:eid ORDER BY created_at DESC", {"eid": elder_id})])
 
 
 @app.post("/api/elders/{elder_id}/devices")
 def create_device(elder_id: int, req: DeviceRequest, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Bind a device serial number to an elder."""
     require_elder(db, elder_id, uid)
     if one(db, "SELECT id FROM devices WHERE device_sn=:sn", {"sn": req.deviceSn.strip()}):
         raise BusinessError("设备码已被绑定")
@@ -522,6 +574,7 @@ def create_device(elder_id: int, req: DeviceRequest, uid: int = Depends(current_
 
 @app.delete("/api/elders/{elder_id}/devices/{device_id}")
 def delete_device(elder_id: int, device_id: int, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Unbind a device from an elder."""
     require_elder(db, elder_id, uid)
     row = one(db, "SELECT * FROM devices WHERE id=:id AND elder_id=:eid", {"id": device_id, "eid": elder_id})
     if not row:
@@ -531,7 +584,8 @@ def delete_device(elder_id: int, device_id: int, uid: int = Depends(current_user
     return ok()
 
 
-class TaskRequest(BaseModel):
+# Family care task APIs\nclass TaskRequest(BaseModel):
+    """Validate the payload for task operations."""
     title: str
     elderId: Optional[int] = None
     assigneeUserId: Optional[int] = None
@@ -541,6 +595,7 @@ class TaskRequest(BaseModel):
 
 
 def task_view(db: Session, row):
+    """Serialize a care task and include the assignee display name."""
     assignee = one(db, "SELECT name FROM users WHERE id=:id", {"id": row["assignee_user_id"]}) if row["assignee_user_id"] else None
     data = view_row(row)
     data["assigneeName"] = assignee["name"] if assignee else ""
@@ -548,6 +603,7 @@ def task_view(db: Session, row):
 
 
 def validate_task_request(db: Session, family_id: int, req: TaskRequest, uid: int):
+    """Validate task status, assignee membership, and elder access."""
     if req.status not in ("TODO","DOING","DONE"):
         raise BusinessError("无效的任务状态")
     if req.assigneeUserId:
@@ -561,6 +617,7 @@ def validate_task_request(db: Session, family_id: int, req: TaskRequest, uid: in
 
 @app.get("/api/care-tasks")
 def list_tasks(uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """List care tasks for the current family."""
     family = current_family(db, uid)
     rows = all_rows(db, "SELECT * FROM care_tasks WHERE family_id=:fid ORDER BY created_at DESC", {"fid": family["id"]})
     return ok([task_view(db, r) for r in rows])
@@ -568,6 +625,7 @@ def list_tasks(uid: int = Depends(current_user_id), db: Session = Depends(get_db
 
 @app.get("/api/care-tasks/{task_id}")
 def get_task(task_id: int, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Return a single care task from the current family."""
     family = current_family(db, uid)
     row = one(db, "SELECT * FROM care_tasks WHERE id=:id AND family_id=:fid", {"id": task_id, "fid": family["id"]})
     if not row:
@@ -577,6 +635,7 @@ def get_task(task_id: int, uid: int = Depends(current_user_id), db: Session = De
 
 @app.post("/api/care-tasks")
 def create_task(req: TaskRequest, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Create a care task in the current family."""
     family = current_family(db, uid)
     validate_task_request(db, family["id"], req, uid)
     tid, ts = new_id(), now()
@@ -592,6 +651,7 @@ def create_task(req: TaskRequest, uid: int = Depends(current_user_id), db: Sessi
 
 @app.put("/api/care-tasks/{task_id}")
 def update_task(task_id: int, req: TaskRequest, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Update a care task in the current family."""
     family = current_family(db, uid)
     if not one(db, "SELECT id FROM care_tasks WHERE id=:id AND family_id=:fid", {"id": task_id, "fid": family["id"]}):
         raise BusinessError("照护任务不存在")
@@ -607,6 +667,7 @@ def update_task(task_id: int, req: TaskRequest, uid: int = Depends(current_user_
 
 @app.post("/api/care-tasks/{task_id}/complete")
 def complete_task(task_id: int, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Mark a care task as completed."""
     family = current_family(db, uid)
     if not one(db, "SELECT id FROM care_tasks WHERE id=:id AND family_id=:fid", {"id": task_id, "fid": family["id"]}):
         raise BusinessError("照护任务不存在")
@@ -617,14 +678,16 @@ def complete_task(task_id: int, uid: int = Depends(current_user_id), db: Session
 
 @app.delete("/api/care-tasks/{task_id}")
 def delete_task(task_id: int, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Delete a care task from the current family."""
     family = current_family(db, uid)
     execute(db, "DELETE FROM care_tasks WHERE id=:id AND family_id=:fid", {"id": task_id, "fid": family["id"]})
     db.commit()
     return ok()
 
 
-@app.get("/api/sos-events")
+# SOS event APIs\n@app.get("/api/sos-events")
 def list_sos(uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """List SOS events for elders in the current family."""
     family = current_family(db, uid)
     rows = all_rows(db, """
         SELECT s.* FROM sos_events s JOIN elders e ON e.id=s.elder_id
@@ -635,6 +698,7 @@ def list_sos(uid: int = Depends(current_user_id), db: Session = Depends(get_db))
 
 @app.post("/api/sos-events/{event_id}/handle")
 def handle_sos(event_id: int, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Mark an SOS event as being handled by the current user."""
     family = current_family(db, uid)
     event = one(db, """
         SELECT s.* FROM sos_events s JOIN elders e ON e.id=s.elder_id
@@ -650,6 +714,7 @@ def handle_sos(event_id: int, uid: int = Depends(current_user_id), db: Session =
 
 @app.post("/api/sos-events/{event_id}/close")
 def close_sos(event_id: int, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Close an SOS event and preserve existing handler information."""
     family = current_family(db, uid)
     event = one(db, """
         SELECT s.* FROM sos_events s JOIN elders e ON e.id=s.elder_id
@@ -665,7 +730,8 @@ def close_sos(event_id: int, uid: int = Depends(current_user_id), db: Session = 
     return ok(view_row(one(db, "SELECT * FROM sos_events WHERE id=:id", {"id": event_id})))
 
 
-class NotificationRequest(BaseModel):
+# User settings and feedback APIs\nclass NotificationRequest(BaseModel):
+    """Validate the payload for notification operations."""
     sosEnabled: bool
     reminderEnabled: bool
     healthEnabled: bool
@@ -675,6 +741,7 @@ class NotificationRequest(BaseModel):
 
 @app.get("/api/notification-settings")
 def get_notifications(uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Return notification preferences, creating defaults when absent."""
     row = one(db, "SELECT * FROM notification_settings WHERE user_id=:uid", {"uid": uid})
     if not row:
         ts = now()
@@ -689,6 +756,7 @@ def get_notifications(uid: int = Depends(current_user_id), db: Session = Depends
 
 @app.put("/api/notification-settings")
 def update_notifications(req: NotificationRequest, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Update notification preferences for the current user."""
     get_notifications(uid, db)
     execute(db, """
         UPDATE notification_settings SET sos_enabled=:sos,reminder_enabled=:reminder,health_enabled=:health,
@@ -700,6 +768,7 @@ def update_notifications(req: NotificationRequest, uid: int = Depends(current_us
 
 
 class PrivacyRequest(BaseModel):
+    """Validate the payload for privacy operations."""
     healthVisible: bool
     locationVisible: bool
     deviceVisible: bool
@@ -707,6 +776,7 @@ class PrivacyRequest(BaseModel):
 
 @app.get("/api/privacy-settings")
 def get_privacy(uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Return privacy preferences, creating defaults when absent."""
     row = one(db, "SELECT * FROM privacy_settings WHERE user_id=:uid", {"uid": uid})
     if not row:
         ts = now()
@@ -721,6 +791,7 @@ def get_privacy(uid: int = Depends(current_user_id), db: Session = Depends(get_d
 
 @app.put("/api/privacy-settings")
 def update_privacy(req: PrivacyRequest, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Update privacy preferences for the current user."""
     get_privacy(uid, db)
     execute(db, """
         UPDATE privacy_settings SET health_visible=:health,location_visible=:location,device_visible=:device,updated_at=:ts
@@ -731,12 +802,14 @@ def update_privacy(req: PrivacyRequest, uid: int = Depends(current_user_id), db:
 
 
 class FeedbackRequest(BaseModel):
+    """Validate the payload for feedback operations."""
     content: str = Field(min_length=1, max_length=1000)
     contact: Optional[str] = Field(default=None, max_length=100)
 
 
 @app.post("/api/feedbacks")
 def create_feedback(req: FeedbackRequest, uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
+    """Store user feedback for later review."""
     fid = new_id()
     execute(db, """
         INSERT INTO feedbacks(id,user_id,content,contact,status,created_at)
