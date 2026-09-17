@@ -200,7 +200,18 @@ def logout_token(authorization: str | None):
 
 
 def current_family(db: Session, uid: int):
-    """Return the active family, creating a default family when needed.\n\n    Args:\n        db: Active SQLAlchemy database session.\n        uid: Authenticated user identifier.\n\n    Returns:\n        A database mapping row for the active family.\n\n    Raises:\n        BusinessError: If the user record no longer exists.\n    """
+    """Return the active family, creating a default family when needed.
+
+    Args:
+        db: Active SQLAlchemy database session.
+        uid: Authenticated user identifier.
+
+    Returns:
+        A database mapping row for the active family.
+
+    Raises:
+        BusinessError: If the user record no longer exists.
+    """
     member = one(db, """
         SELECT * FROM family_members
         WHERE user_id=:uid AND status='ACTIVE'
