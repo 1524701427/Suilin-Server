@@ -18,7 +18,8 @@ from .core import (
     require_member, valid_phone, verify_password, view_row
 )
 
-# Application and exception handling\napp = FastAPI(title="岁邻 API", version="2.0.0", docs_url="/swagger-ui.html", openapi_url="/v3/api-docs")
+# Application and exception handling
+app = FastAPI(title="岁邻 API", version="2.0.0", docs_url="/swagger-ui.html", openapi_url="/v3/api-docs")
 
 
 @app.exception_handler(BusinessError)
@@ -47,7 +48,8 @@ def health():
     return {"status": "ok"}
 
 
-# Authentication and current-user APIs\nclass RegisterRequest(BaseModel):
+# Authentication and current-user APIs
+class RegisterRequest(BaseModel):
     """Validate the payload for register operations."""
     phone: str
     name: str = Field(min_length=1, max_length=50)
@@ -148,7 +150,8 @@ def get_family_members(uid: int = Depends(current_user_id), db: Session = Depend
     } for r in rows])
 
 
-# Family membership and invitations\nclass FamilyInviteRequest(BaseModel):
+# Family membership and invitations
+class FamilyInviteRequest(BaseModel):
     """Validate the payload for family invite operations."""
     phone: str
     memberRole: str = "MEMBER"
@@ -236,7 +239,8 @@ def remove_family_member(member_id: int, uid: int = Depends(current_user_id), db
     return ok()
 
 
-# Elder profiles and elder-client binding\nclass ElderRequest(BaseModel):
+# Elder profiles and elder-client binding
+class ElderRequest(BaseModel):
     """Validate the payload for elder operations."""
     name: str
     relation: str
@@ -429,7 +433,8 @@ def elder_client_sos(req: SosRequest, db: Session = Depends(get_db)):
     return ok(view_row(one(db, "SELECT * FROM sos_events WHERE id=:id", {"id": sid})))
 
 
-# Reminder APIs\nclass ReminderRequest(BaseModel):
+# Reminder APIs
+class ReminderRequest(BaseModel):
     """Validate the payload for reminder operations."""
     title: str
     type: str
@@ -486,7 +491,8 @@ def delete_reminder(elder_id: int, reminder_id: int, uid: int = Depends(current_
     return ok()
 
 
-# Health record APIs\nclass HealthRequest(BaseModel):
+# Health record APIs
+class HealthRequest(BaseModel):
     """Validate the payload for health operations."""
     metricType: str
     valueText: str
@@ -544,7 +550,8 @@ def delete_health(elder_id: int, record_id: int, uid: int = Depends(current_user
     return ok()
 
 
-# Device binding APIs\nclass DeviceRequest(BaseModel):
+# Device binding APIs
+class DeviceRequest(BaseModel):
     """Validate the payload for device operations."""
     deviceType: str
     deviceSn: str
@@ -584,7 +591,8 @@ def delete_device(elder_id: int, device_id: int, uid: int = Depends(current_user
     return ok()
 
 
-# Family care task APIs\nclass TaskRequest(BaseModel):
+# Family care task APIs
+class TaskRequest(BaseModel):
     """Validate the payload for task operations."""
     title: str
     elderId: Optional[int] = None
@@ -685,7 +693,8 @@ def delete_task(task_id: int, uid: int = Depends(current_user_id), db: Session =
     return ok()
 
 
-# SOS event APIs\n@app.get("/api/sos-events")
+# SOS event APIs
+@app.get("/api/sos-events")
 def list_sos(uid: int = Depends(current_user_id), db: Session = Depends(get_db)):
     """List SOS events for elders in the current family."""
     family = current_family(db, uid)
@@ -730,7 +739,8 @@ def close_sos(event_id: int, uid: int = Depends(current_user_id), db: Session = 
     return ok(view_row(one(db, "SELECT * FROM sos_events WHERE id=:id", {"id": event_id})))
 
 
-# User settings and feedback APIs\nclass NotificationRequest(BaseModel):
+# User settings and feedback APIs
+class NotificationRequest(BaseModel):
     """Validate the payload for notification operations."""
     sosEnabled: bool
     reminderEnabled: bool
